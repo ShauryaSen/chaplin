@@ -25,10 +25,13 @@ class Chaplin:
 
         # video params
         self.output_prefix = "webcam"
-        self.res_factor = 3
-        self.fps = 16
+        # tuned on 20 silent-mouthing clips (tune/sweep.py): 1280x720 at the model's
+        # native 25 fps with near-lossless frames cut WER from 70.5% to 41.7%
+        self.capture_width = 1280
+        self.capture_height = 720
+        self.fps = 25
         self.frame_interval = 1 / self.fps
-        self.frame_compression = 25
+        self.frame_compression = 100
 
         # setup keyboard controller for typing
         self.kbd_controller = keyboard.Controller()
@@ -98,6 +101,9 @@ class Chaplin:
         if chat_output.corrected_text[-1] not in ['.', '?', '!']:
             chat_output.corrected_text += '.'
 
+        # also log the corrected text, since typing fails silently without Accessibility permission
+        print(f"\n\033[48;5;22m\033[97m\033[1m CORRECTED \033[0m: {chat_output.corrected_text}\n")
+
         # add space at the end
         chat_output.corrected_text += ' '
 
@@ -127,10 +133,14 @@ class Chaplin:
         self.current_sequence += 1
 
         # start the async LLM correction (non-blocking) with sequence number
-        asyncio.run_coroutine_threadsafe(
+        correction_future = asyncio.run_coroutine_threadsafe(
             self.correct_output_async(output, sequence_num),
             self.loop
         )
+
+        # surface correction errors instead of dropping them silently
+        correction_future.add_done_callback(
+            lambda f: f.exception() and print(f"\n CORRECTION FAILED : {f.exception()!r}\n"))
 
         # return immediately without waiting for correction
         return {
@@ -143,8 +153,8 @@ class Chaplin:
         cap = cv2.VideoCapture(0)
 
         # set webcam resolution, and get frame dimensions
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640 // self.res_factor)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480 // self.res_factor)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.capture_width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.capture_height)
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
